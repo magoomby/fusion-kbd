@@ -26,6 +26,7 @@ extended with a user-friendly shell command, persistent state, and systemd resto
 ```bash
 git clone https://github.com/YOUR_USERNAME/fusion-kbd.git
 cd fusion-kbd
+chmod +x install.sh
 sudo ./install.sh
 ```
 
@@ -77,6 +78,7 @@ automatically reapplied at boot via the `fusion-kbd` systemd service.
 ## Uninstall
 
 ```bash
+chmod +x uninstall.sh
 sudo ./uninstall.sh
 ```
 
