@@ -24,7 +24,7 @@ extended with a user-friendly shell command, persistent state, and systemd resto
 ## Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/fusion-kbd.git
+git clone https://github.com/magoomby/fusion-kbd.git
 cd fusion-kbd
 chmod +x install.sh
 sudo ./install.sh
