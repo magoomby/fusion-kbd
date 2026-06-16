@@ -53,9 +53,8 @@ kb custom-file <file.bin>    # raw 512-byte payload
 kb --last                    # reapply last saved setting
 kb --last                    # reapply last saved setting
 kb --help                    # full usage
-
-NOTE: If you want to use a hash character you need to wrap the value in quotes
 ```
+* NOTE: If you want to use a hash character you need to wrap the value in quotes
 
 ## Brightness and speed
 
