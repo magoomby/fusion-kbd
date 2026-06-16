@@ -32,22 +32,29 @@ sudo ./install.sh
 ## Usage
 
 ```bash
-kb red                    # static red
-kb white                  # static white
-kb breathing blue         # breathing blue
-kb neon                   # rainbow neon cycle
-kb rainbow                # rainbow marquee
-kb rotate                 # rotating colors
-kb hedge                  # hedge effect
-kb raindrop               # raindrop effect
-kb circle                 # circle marquee
-kb marquee                # marquee snake
-kb ripple red             # ripple on keypress (red)
-kb flash green            # flash on keypress (green)
-kb fade blue              # fade on keypress (blue)
-kb breathing red 30 3     # breathing red, brightness 30, speed 3
-kb --last                 # reapply last saved setting
-kb --help                 # full usage
+kb red                       # static red
+kb white                     # static white
+kb breathing blue            # breathing blue
+kb neon                      # rainbow neon cycle
+kb rainbow                   # rainbow marquee
+kb rotate                    # rotating colors
+kb hedge                     # hedge effect
+kb raindrop                  # raindrop effect
+kb circle                    # circle marquee
+kb marquee                   # marquee snake
+kb ripple red                # ripple on keypress (red)
+kb flash green               # flash on keypress (green)
+kb fade blue                 # fade on keypress (blue)
+kb breathing red 30 3        # breathing red, brightness 30, speed 3
+kb solid RRGGBB              # all keys one hex color: F4BB22
+kb alternate '#RGB1' '#RGB2' # alternate two colors: '#4400BB' '#AA55BB'
+kb gradient RRGGBB '#RGB'    # gradient across keys: 2299FF '#DD9944'
+kb custom-file <file.bin>    # raw 512-byte payload
+kb --last                    # reapply last saved setting
+kb --last                    # reapply last saved setting
+kb --help                    # full usage
+
+NOTE: If you want to use a hash character you need to wrap the value in quotes
 ```
 
 ## Brightness and speed
@@ -56,7 +63,7 @@ kb --help                 # full usage
 - Speed: 1–10 (default 5)
 
 ```bash
-kb breathing blue 40 8    # brightness 40, speed 8
+kb breathing blue 40 8       # brightness 40, speed 8
 ```
 
 ## Persistence
