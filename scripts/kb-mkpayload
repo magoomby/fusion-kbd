@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""
+Generate a 512-byte Fusion RGB keyboard payload.
+
+Usage:
+  kb-mkpayload solid #FF6600          -> all keys one color
+  kb-mkpayload solid FF6600           -> same, # optional
+  kb-mkpayload alternate #FF0000 #0000FF  -> alternating two colors
+  kb-mkpayload gradient #FF0000 #0000FF   -> gradient across keys
+  kb-mkpayload out <file.bin>         -> write raw payload to file
+"""
+import sys, struct
+
+# Key map: slot index -> key name (from data.c, adapted to US layout)
+# 128 slots, 'no' = unused/padding slot
+KEYMAP = [
+    'no','no','no','no','no','no',
+    'ctrl_l','shift_l','capslock','tab','grave','esc',
+    'fn','backslash','a','q','1','f1',
+    'win','y','s','w','2','f2',
+    'alt_l','x','d','e','3','f3',
+    'no','c','f','r','4','f4',
+    'no','v','g','t','5','f5',
+    'space','b','h','z','6','f6',
+    'no','n','j','u','7','f7',
+    'no','m','k','i','8','f8',
+    'alt_r','comma','l','o','9','f9',
+    'menu','period','semicolon','p','0','f10',
+    'ctrl_r','minus','quote','bracket_l','equal','f11',
+    'no','no','no','plus','backtick','f12',
+    'left','shift_r','hash','no','no','break',
+    'down','up','enter','no','backspace','delete',
+    'right',
+    'num1','num4','num7','numlk','home',
+    'num0','num2','num5','num8','num_slash','pageup',
+    'num_comma','num3','num6','num9','num_star','pagedown',
+    'num_enter','no','num_plus','no','num_minus','end',
+    'no','no','no','no','no','no','no','no'
+]
+
+def parse_hex(h):
+    h = h.lstrip('#')
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+def make_payload(colors_by_slot):
+    """colors_by_slot: list of 128 (R,G,B) tuples"""
+    out = bytearray(512)
+    for i, (r, g, b) in enumerate(colors_by_slot):
+        out[i*4]   = g
+        out[i*4+1] = r
+        out[i*4+2] = b
+        out[i*4+3] = 0x00
+    return bytes(out)
+
+def solid(color):
+    return make_payload([color] * 128)
+
+def alternate(c1, c2):
+    return make_payload([c1 if i % 2 == 0 else c2 for i in range(128)])
+
+def gradient(c1, c2):
+    def lerp(a, b, t): return int(a + (b - a) * t)
+    slots = []
+    for i in range(128):
+        t = i / 127.0
+        slots.append(tuple(lerp(c1[j], c2[j], t) for j in range(3)))
+    return make_payload(slots)
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print(__doc__); sys.exit(1)
+
+    cmd = sys.argv[1]
+    outfile = None
+
+    # check for output file flag
+    args = sys.argv[2:]
+    if len(args) >= 2 and args[-2] == 'out':
+        outfile = args[-1]; args = args[:-2]
+    elif len(args) >= 1 and args[0] == 'out':
+        # kb-mkpayload solid #fff out file.bin
+        pass  # handled below
+
+    # re-parse cleanly
+    args = sys.argv[2:]
+    out_idx = None
+    for i, a in enumerate(args):
+        if a == 'out': out_idx = i; break
+    if out_idx is not None:
+        outfile = args[out_idx + 1]
+        args = args[:out_idx]
+
+    if cmd == 'solid':
+        payload = solid(parse_hex(args[0]))
+    elif cmd == 'alternate':
+        payload = alternate(parse_hex(args[0]), parse_hex(args[1]))
+    elif cmd == 'gradient':
+        payload = gradient(parse_hex(args[0]), parse_hex(args[1]))
+    else:
+        print(f"Unknown command: {cmd}"); sys.exit(1)
+
+    if outfile:
+        with open(outfile, 'wb') as f:
+            f.write(payload)
+        print(f"Written {len(payload)} bytes to {outfile}")
+    else:
+        sys.stdout.buffer.write(payload)

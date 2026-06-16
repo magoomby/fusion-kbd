@@ -1,0 +1,150 @@
+#!/bin/bash
+# kb - Gigabyte Fusion RGB keyboard controller
+# Usage: kb <mode> [color] [brightness] [speed]
+#        kb <color>                  shorthand for static <color>
+#        kb solid #RRGGBB            all keys one hex color
+#        kb alternate #RGB1 #RGB2       alternate two colors
+#        kb gradient #RGB1 #RGB2     gradient across keys
+#        kb custom-file <file.bin>   raw 512-byte payload
+#        kb --last                   reapply last saved setting
+#        kb --help
+
+declare -A M=(
+  [static]=1 [breathing]=2 [fade]=4 [marquee]=5
+  [ripple]=6 [flash]=7 [neon]=8 [rainbow]=9
+  [raindrop]=10 [circle]=11 [hedge]=12 [rotate]=13
+)
+declare -A C=(
+  [red]=1 [green]=2 [yellow]=3 [blue]=4
+  [purple]=5 [aqua]=6 [white]=7
+)
+STATE=/var/lib/fusion-kbd/state
+BIN=/usr/local/bin/fusion-setmode
+CUSTBIN=/usr/local/bin/fusion-setcustom
+MKPAYLOAD=/usr/local/bin/kb-mkpayload
+TMPDIR=/tmp/fusion-kbd
+
+usage() {
+  cat << 'USAGE'
+Usage:
+  kb <color>                        static colour (eg. kb red)
+  kb <mode> [color]                 preset mode   (eg. kb breathing blue)
+  kb <mode> [color] [bright] [spd]  full control  (eg. kb rainbow green 50 5)
+  kb solid RRGGBB                   all keys one hex colour
+  kb alternate RRGGBB RRGGBB        alternating two hex colours
+  kb gradient '#RGB1' '#RGB2'       gradient across all keys
+  kb custom-file <file.bin>         raw 512-byte payload file
+  kb --last                         reapply last saved setting
+  kb --help                         this help
+
+Preset modes:     static breathing fade marquee ripple flash
+                  neon rainbow raindrop circle hedge rotate
+Named colours:    red green yellow blue purple aqua white
+Specific colours: Colours can be written in hex FE00CC or with
+                  a quoted hash string '#CC77B1'
+Brightness:       0-50  (default 50)
+Speed:            1-10  (default 5)
+
+Note: fade, flash, ripple are keypress-reactive.
+      wave (mode 3) is not supported on the Aero (7a3f) controller.
+USAGE
+}
+
+save_state() {
+  sudo mkdir -p "$(dirname "$STATE")"
+  echo "$*" | sudo tee "$STATE" >/dev/null
+}
+
+case "$1" in
+  --help|-h) usage; exit 0 ;;
+
+  --last)
+    [ -r "$STATE" ] || { echo "No saved state."; exit 1; }
+    read -r saved < "$STATE"
+    # detect custom vs preset
+    if [[ "$saved" == custom:* ]]; then
+      file="${saved#custom:}"
+      sudo "$CUSTBIN" "$file"
+    else
+      sudo $BIN $saved
+    fi
+    exit $?
+    ;;
+
+  wave)
+    echo "wave is not supported on the 1044:7a3f controller." >&2
+    exit 1
+    ;;
+
+  custom)
+    mkdir -p "$TMPDIR"
+    tmpfile="$TMPDIR/payload.bin"
+    if [ -z "$2" ]; then
+      echo "Usage: kb custom #RRGGBB [#RRGGBB2]" >&2; exit 1
+    elif [ -n "$3" ] && [[ "$3" == \#* ]]; then
+      "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile"
+    else
+      "$MKPAYLOAD" solid "$2" out "$tmpfile"
+    fi
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
+    exit $?
+    ;;
+
+  gradient)
+    mkdir -p "$TMPDIR"
+    tmpfile="$TMPDIR/payload.bin"
+    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb gradient #RGB1 #RGB2" >&2; exit 1; }
+    "$MKPAYLOAD" gradient "$2" "$3" out "$tmpfile"
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
+    exit $?
+    ;;
+    
+  solid)
+    mkdir -p "$TMPDIR"
+    tmpfile="$TMPDIR/payload.bin"
+    [ -n "$2" ] || { echo "Usage: kb solid #RGB1" >&2; exit 1; }
+    "$MKPAYLOAD" solid "$2" out "$tmpfile"
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
+    exit $?    
+    ;;
+    
+  alternate)
+    mkdir -p "$TMPDIR"
+    tmpfile="$TMPDIR/payload.bin"
+    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb alternate #RGB1 #RGB2" >&2; exit 1; }
+    "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile"
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
+    exit $?
+    ;;
+
+  custom-file)
+    [ -f "$2" ] || { echo "File not found: $2" >&2; exit 1; }
+    sudo "$CUSTBIN" "$2" && save_state "custom:$2"
+    exit $?
+    ;;
+
+  "")
+    usage; exit 1 ;;
+esac
+
+# preset mode / color shorthand
+if [ -n "${C[$1]+x}" ]; then
+  mode=1; color=${C[$1]}
+else
+  if [ -z "${M[$1]+x}" ]; then
+    echo "Unknown mode or color: '$1'" >&2; usage; exit 1
+  fi
+  mode=${M[$1]}
+  if [ -n "$2" ] && [ -n "${C[$2]+x}" ]; then
+    color=${C[$2]}; shift
+  else
+    color=7
+  fi
+fi
+bright=${2:-50}
+speed=${3:-5}
+
+sudo "$BIN" "$mode" "$color" "$bright" "$speed"
+rc=$?
+[ $rc -eq 0 ] && save_state "$mode $color $bright $speed"
+exit $rc

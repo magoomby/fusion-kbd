@@ -1,0 +1,10 @@
+#!/bin/bash
+STATE=/var/lib/fusion-kbd/state
+BIN=/usr/local/bin/fusion-setmode
+if [ -r "$STATE" ]; then
+  read mode color bright speed < "$STATE"
+else
+  # fallback: static white
+  mode=1; color=7; bright=50; speed=5
+fi
+exec "$BIN" "$mode" "$color" "$bright" "$speed"
