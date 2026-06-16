@@ -1,13 +1,17 @@
 #!/bin/bash
 # kb - Gigabyte Fusion RGB keyboard controller
-# Usage: kb <mode> [color] [brightness] [speed]
-#        kb <color>                  shorthand for static <color>
-#        kb solid #RRGGBB            all keys one hex color
-#        kb alternate #RGB1 #RGB2       alternate two colors
-#        kb gradient #RGB1 #RGB2     gradient across keys
-#        kb custom-file <file.bin>   raw 512-byte payload
-#        kb --last                   reapply last saved setting
-#        kb --help
+# Tested on: Gigabyte AERO 15 Studio XB, Ubuntu 24.04 (device 1044:7a3f)
+#
+# Usage:
+#   kb <color>                        static named color  (e.g. kb red)
+#   kb <mode> [color]                 preset mode         (e.g. kb breathing blue)
+#   kb <mode> [color] [bright] [spd]  full control        (e.g. kb rainbow green 50 5)
+#   kb solid #RRGGBB                  all keys one hex color
+#   kb alternate #RRGGBB #RRGGBB      alternating two hex colors
+#   kb gradient #RRGGBB #RRGGBB       gradient across all keys
+#   kb custom-file <file.bin>         raw 512-byte payload file
+#   kb --last                         reapply last saved setting
+#   kb --help                         this help
 
 declare -A M=(
   [static]=1 [breathing]=2 [fade]=4 [marquee]=5
@@ -23,16 +27,17 @@ BIN=/usr/local/bin/fusion-setmode
 CUSTBIN=/usr/local/bin/fusion-setcustom
 MKPAYLOAD=/usr/local/bin/kb-mkpayload
 TMPDIR=/tmp/fusion-kbd
+sudo mkdir -p "$TMPDIR" 2>/dev/null
 
 usage() {
   cat << 'USAGE'
 Usage:
-  kb <color>                        static colour (eg. kb red)
-  kb <mode> [color]                 preset mode   (eg. kb breathing blue)
-  kb <mode> [color] [bright] [spd]  full control  (eg. kb rainbow green 50 5)
-  kb solid RRGGBB                   all keys one hex colour
-  kb alternate RRGGBB RRGGBB        alternating two hex colours
-  kb gradient '#RGB1' '#RGB2'       gradient across all keys
+  kb <color>                        static colour  (e.g. kb red)
+  kb <mode> [color]                 preset mode    (e.g. kb breathing blue)
+  kb <mode> [color] [bright] [spd]  full control   (e.g. kb rainbow green 50 5)
+  kb solid #RRGGBB                  all keys one hex colour
+  kb alternate #RRGGBB #RRGGBB      alternating two hex colours
+  kb gradient #RRGGBB #RRGGBB       gradient across all keys
   kb custom-file <file.bin>         raw 512-byte payload file
   kb --last                         reapply last saved setting
   kb --help                         this help
@@ -40,13 +45,12 @@ Usage:
 Preset modes:     static breathing fade marquee ripple flash
                   neon rainbow raindrop circle hedge rotate
 Named colours:    red green yellow blue purple aqua white
-Specific colours: Colours can be written in hex FE00CC or with
-                  a quoted hash string '#CC77B1'
+Hex colours:      use #RRGGBB or RRGGBB format (e.g. #FF6600 or FF6600)
 Brightness:       0-50  (default 50)
 Speed:            1-10  (default 5)
 
-Note: fade, flash, ripple are keypress-reactive.
-      wave (mode 3) is not supported on the Aero (7a3f) controller.
+Note: fade, flash, ripple are keypress-reactive — press keys to see them.
+      wave (mode 3) is not supported on the Aero 1044:7a3f controller.
 USAGE
 }
 
@@ -55,15 +59,27 @@ save_state() {
   echo "$*" | sudo tee "$STATE" >/dev/null
 }
 
+# validate a hex color argument and exit with a helpful message if invalid
+check_hex() {
+  local val="$1"
+  local stripped="${val#\#}"
+  if ! [[ "$stripped" =~ ^[0-9a-fA-F]{6}$ ]]; then
+    echo "Error: '$val' is not a valid hex color." >&2
+    echo "Use 6-digit hex format: #RRGGBB or RRGGBB (e.g. #FF6600 or FF6600)" >&2
+    echo "Named colors (red, blue, etc.) only work with preset modes like 'kb breathing blue'." >&2
+    exit 1
+  fi
+}
+
 case "$1" in
   --help|-h) usage; exit 0 ;;
 
   --last)
     [ -r "$STATE" ] || { echo "No saved state."; exit 1; }
     read -r saved < "$STATE"
-    # detect custom vs preset
     if [[ "$saved" == custom:* ]]; then
       file="${saved#custom:}"
+      [ -f "$file" ] || { echo "Saved payload file missing: $file" >&2; exit 1; }
       sudo "$CUSTBIN" "$file"
     else
       sudo $BIN $saved
@@ -72,54 +88,56 @@ case "$1" in
     ;;
 
   wave)
-    echo "wave is not supported on the 1044:7a3f controller." >&2
+    echo "Error: wave (mode 3) is not supported on the 1044:7a3f controller." >&2
     exit 1
     ;;
 
-  custom)
-    mkdir -p "$TMPDIR"
+  solid)
+    [ -n "$2" ] || { echo "Usage: kb solid #RRGGBB" >&2; exit 1; }
+    check_hex "$2"
     tmpfile="$TMPDIR/payload.bin"
-    if [ -z "$2" ]; then
-      echo "Usage: kb custom #RRGGBB [#RRGGBB2]" >&2; exit 1
-    elif [ -n "$3" ] && [[ "$3" == \#* ]]; then
-      "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile"
-    else
-      "$MKPAYLOAD" solid "$2" out "$tmpfile"
-    fi
+    "$MKPAYLOAD" solid "$2" out "$tmpfile" || exit 1
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
+    exit $?
+    ;;
+
+  alternate)
+    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb alternate #RRGGBB #RRGGBB" >&2; exit 1; }
+    check_hex "$2"; check_hex "$3"
+    tmpfile="$TMPDIR/payload.bin"
+    "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile" || exit 1
     sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
     exit $?
     ;;
 
   gradient)
-    mkdir -p "$TMPDIR"
+    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb gradient #RRGGBB #RRGGBB" >&2; exit 1; }
+    check_hex "$2"; check_hex "$3"
     tmpfile="$TMPDIR/payload.bin"
-    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb gradient #RGB1 #RGB2" >&2; exit 1; }
-    "$MKPAYLOAD" gradient "$2" "$3" out "$tmpfile"
-    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
-    exit $?
-    ;;
-    
-  solid)
-    mkdir -p "$TMPDIR"
-    tmpfile="$TMPDIR/payload.bin"
-    [ -n "$2" ] || { echo "Usage: kb solid #RGB1" >&2; exit 1; }
-    "$MKPAYLOAD" solid "$2" out "$tmpfile"
-    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
-    exit $?    
-    ;;
-    
-  alternate)
-    mkdir -p "$TMPDIR"
-    tmpfile="$TMPDIR/payload.bin"
-    [ -n "$2" ] && [ -n "$3" ] || { echo "Usage: kb alternate #RGB1 #RGB2" >&2; exit 1; }
-    "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile"
+    "$MKPAYLOAD" gradient "$2" "$3" out "$tmpfile" || exit 1
     sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
     exit $?
     ;;
 
   custom-file)
-    [ -f "$2" ] || { echo "File not found: $2" >&2; exit 1; }
+    [ -f "$2" ] || { echo "Error: file not found: $2" >&2; exit 1; }
     sudo "$CUSTBIN" "$2" && save_state "custom:$2"
+    exit $?
+    ;;
+
+  custom)
+    # legacy: kb custom #RGB  or  kb custom #RGB1 #RGB2
+    echo "Note: 'kb custom' is deprecated. Use 'kb solid #RRGGBB' or 'kb alternate #RGB1 #RGB2'" >&2
+    [ -n "$2" ] || { echo "Usage: kb solid #RRGGBB" >&2; exit 1; }
+    check_hex "$2"
+    tmpfile="$TMPDIR/payload.bin"
+    if [ -n "$3" ]; then
+      check_hex "$3"
+      "$MKPAYLOAD" alternate "$2" "$3" out "$tmpfile" || exit 1
+    else
+      "$MKPAYLOAD" solid "$2" out "$tmpfile" || exit 1
+    fi
+    sudo "$CUSTBIN" "$tmpfile" && save_state "custom:$tmpfile"
     exit $?
     ;;
 
@@ -127,18 +145,28 @@ case "$1" in
     usage; exit 1 ;;
 esac
 
-# preset mode / color shorthand
+# preset mode or named color shorthand
 if [ -n "${C[$1]+x}" ]; then
+  # shorthand: kb red  ->  static red
   mode=1; color=${C[$1]}
 else
   if [ -z "${M[$1]+x}" ]; then
-    echo "Unknown mode or color: '$1'" >&2; usage; exit 1
+    echo "Error: Unknown mode or color: '$1'" >&2
+    echo "" >&2
+    usage
+    exit 1
   fi
   mode=${M[$1]}
   if [ -n "$2" ] && [ -n "${C[$2]+x}" ]; then
     color=${C[$2]}; shift
   else
-    color=7
+    if [ -n "$2" ] && [[ "$2" != [0-9]* ]]; then
+      echo "Error: Unknown color: '$2'" >&2
+      echo "Named colours: red green yellow blue purple aqua white" >&2
+      echo "For hex colours use: kb solid #RRGGBB" >&2
+      exit 1
+    fi
+    color=7  # default white
   fi
 fi
 bright=${2:-50}

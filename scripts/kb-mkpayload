@@ -3,16 +3,14 @@
 Generate a 512-byte Fusion RGB keyboard payload.
 
 Usage:
-  kb-mkpayload solid #FF6600          -> all keys one color
-  kb-mkpayload solid FF6600           -> same, # optional
-  kb-mkpayload alternate #FF0000 #0000FF  -> alternating two colors
-  kb-mkpayload gradient #FF0000 #0000FF   -> gradient across keys
-  kb-mkpayload out <file.bin>         -> write raw payload to file
+  kb-mkpayload solid FF6600           -> all keys one color (# optional)
+  kb-mkpayload alternate FF0000 0000FF -> alternating two colors
+  kb-mkpayload gradient FF0000 0000FF  -> gradient across keys
+  Add: out <file.bin>                  -> write to file instead of stdout
 """
-import sys, struct
+import sys
 
-# Key map: slot index -> key name (from data.c, adapted to US layout)
-# 128 slots, 'no' = unused/padding slot
+# Key map: slot index -> key name (128 slots, 'no' = unused/padding)
 KEYMAP = [
     'no','no','no','no','no','no',
     'ctrl_l','shift_l','capslock','tab','grave','esc',
@@ -39,17 +37,42 @@ KEYMAP = [
 ]
 
 def parse_hex(h):
+    """Parse a hex color string like #FF6600 or FF6600 into (R, G, B)."""
+    original = h
     h = h.lstrip('#')
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    if len(h) != 6:
+        print(f"Error: '{original}' is not a valid hex color.", file=sys.stderr)
+        print(f"Use 6-digit hex format: #RRGGBB or RRGGBB (e.g. #FF6600 or FF6600)", file=sys.stderr)
+        sys.exit(1)
+    try:
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    except ValueError:
+        print(f"Error: '{original}' is not a valid hex color.", file=sys.stderr)
+        print(f"Use 6-digit hex format: #RRGGBB or RRGGBB (e.g. #FF6600 or FF6600)", file=sys.stderr)
+        sys.exit(1)
+
+def is_hex_color(s):
+    """Return True if s looks like a hex color argument."""
+    h = s.lstrip('#')
+    if len(h) != 6:
+        return False
+    try:
+        int(h, 16)
+        return True
+    except ValueError:
+        return False
 
 def make_payload(colors_by_slot):
-    """colors_by_slot: list of 128 (R,G,B) tuples"""
+    """
+    Build 512-byte payload. Byte order per key slot: 0x00, R, G, B
+    (empirically determined on Gigabyte AERO 15 Studio XB, 1044:7a3f)
+    """
     out = bytearray(512)
     for i, (r, g, b) in enumerate(colors_by_slot):
-        out[i*4]   = g
+        out[i*4]   = 0x00
         out[i*4+1] = r
-        out[i*4+2] = b
-        out[i*4+3] = 0x00
+        out[i*4+2] = g
+        out[i*4+3] = b
     return bytes(out)
 
 def solid(color):
@@ -71,33 +94,46 @@ if __name__ == '__main__':
         print(__doc__); sys.exit(1)
 
     cmd = sys.argv[1]
+    args = sys.argv[2:]
+
+    # parse optional 'out <file>' at end
     outfile = None
-
-    # check for output file flag
-    args = sys.argv[2:]
-    if len(args) >= 2 and args[-2] == 'out':
-        outfile = args[-1]; args = args[:-2]
-    elif len(args) >= 1 and args[0] == 'out':
-        # kb-mkpayload solid #fff out file.bin
-        pass  # handled below
-
-    # re-parse cleanly
-    args = sys.argv[2:]
     out_idx = None
     for i, a in enumerate(args):
-        if a == 'out': out_idx = i; break
+        if a == 'out':
+            out_idx = i
+            break
     if out_idx is not None:
+        if out_idx + 1 >= len(args):
+            print("Error: 'out' requires a filename argument", file=sys.stderr)
+            sys.exit(1)
         outfile = args[out_idx + 1]
         args = args[:out_idx]
 
+    # validate that color args look like hex, not named colors
+    for a in args:
+        if a and not is_hex_color(a):
+            print(f"Error: '{a}' is not a valid hex color.", file=sys.stderr)
+            print(f"Named colors (red, blue, etc.) only work with preset modes.", file=sys.stderr)
+            print(f"For solid/alternate/gradient, use hex: #RRGGBB or RRGGBB (e.g. #FF6600)", file=sys.stderr)
+            sys.exit(1)
+
     if cmd == 'solid':
+        if len(args) < 1:
+            print("Usage: kb-mkpayload solid #RRGGBB", file=sys.stderr); sys.exit(1)
         payload = solid(parse_hex(args[0]))
     elif cmd == 'alternate':
+        if len(args) < 2:
+            print("Usage: kb-mkpayload alternate #RRGGBB #RRGGBB", file=sys.stderr); sys.exit(1)
         payload = alternate(parse_hex(args[0]), parse_hex(args[1]))
     elif cmd == 'gradient':
+        if len(args) < 2:
+            print("Usage: kb-mkpayload gradient #RRGGBB #RRGGBB", file=sys.stderr); sys.exit(1)
         payload = gradient(parse_hex(args[0]), parse_hex(args[1]))
     else:
-        print(f"Unknown command: {cmd}"); sys.exit(1)
+        print(f"Error: Unknown command '{cmd}'", file=sys.stderr)
+        print(f"Valid commands: solid, alternate, gradient", file=sys.stderr)
+        sys.exit(1)
 
     if outfile:
         with open(outfile, 'wb') as f:
